@@ -1,0 +1,8 @@
+.env
+credentials.json
+expenses_fallback.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+.agents

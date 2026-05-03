@@ -56,10 +56,11 @@ async def telegram_webhook(request: Request):
         return JSONResponse({"status": "ignored", "reason": "no message in update"})
 
     text = message_obj.get("text", "").strip()
+    chat_id = message_obj.get("chat", {}).get("id")
     if not text:
         return JSONResponse({"status": "ignored", "reason": "empty message text"})
 
-    logger.info(f"Received message: {text!r}")
+    logger.info(f"Received message: {text!r} from chat: {chat_id}")
 
     # ── Skip Telegram Commands ─────────────────────────────────────────────────
     if text.startswith("/"):
@@ -71,6 +72,12 @@ async def telegram_webhook(request: Request):
         parsed = parse_expense(text)
     except Exception as e:
         logger.error(f"Parsing failed: {e}")
+        if chat_id:
+            return JSONResponse({
+                "method": "sendMessage",
+                "chat_id": chat_id,
+                "text": "❌ Failed to parse the expense from your message."
+            })
         raise HTTPException(status_code=422, detail=f"Could not parse expense: {e}")
 
     parsed["raw_input"] = text
@@ -80,6 +87,12 @@ async def telegram_webhook(request: Request):
         expense = Expense(**parsed)
     except Exception as e:
         logger.error(f"Validation failed: {e}")
+        if chat_id:
+            return JSONResponse({
+                "method": "sendMessage",
+                "chat_id": chat_id,
+                "text": f"❌ Failed to validate expense data. Please include a valid amount.\nError: {e}"
+            })
         raise HTTPException(status_code=422, detail=f"Invalid expense data: {e}")
 
     # ── 4. Currency Conversion ─────────────────────────────────────────────────
@@ -90,7 +103,12 @@ async def telegram_webhook(request: Request):
         append_expense(expense.model_dump())
     except Exception as e:
         logger.error(f"Storage failed: {e}")
-        # Non-fatal: still return the parsed result
+        if chat_id:
+            return JSONResponse({
+                "method": "sendMessage",
+                "chat_id": chat_id,
+                "text": "⚠️ Expense parsed, but failed to save to Google Sheets!"
+            })
         return JSONResponse(
             status_code=207,
             content={
@@ -100,6 +118,14 @@ async def telegram_webhook(request: Request):
             },
         )
 
+    # ── 6. Success Reply ───────────────────────────────────────────────────────
+    if chat_id:
+        return JSONResponse({
+            "method": "sendMessage",
+            "chat_id": chat_id,
+            "text": f"✅ Expense got tracked!\n\n**{expense.description}**\nAmount: {expense.amount} {expense.currency}\nCategory: {expense.category}"
+        })
+        
     return JSONResponse({
         "status": "success",
         "data": expense.model_dump(),

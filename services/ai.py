@@ -35,15 +35,28 @@ Output: {{"amount": 150, "currency": "EGP", "category": "Transport", "descriptio
 Return ONLY the JSON object, no markdown, no explanation."""
 
 
-def parse_with_openai(message: str) -> dict:
-    """Parse expense message using OpenAI API."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY not set")
+def parse_with_llm(message: str) -> dict:
+    """Parse expense message using an LLM (OpenAI or OpenRouter)."""
+    provider = os.getenv("AI_PROVIDER", "openai").lower()
+    
+    if provider == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
+        model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3-8b-instruct")
+    else:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set")
+        client = OpenAI(api_key=api_key)
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
-    client = OpenAI(api_key=api_key)
     response = client.chat.completions.create(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        model=model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": message},
@@ -119,17 +132,20 @@ def parse_with_mock(message: str) -> dict:
 
 
 def parse_expense(message: str) -> dict:
-    """Main entry point: try OpenAI first, fall back to mock parser."""
-    # Try OpenAI if API key is available
-    if os.getenv("OPENAI_API_KEY"):
+    """Main entry point: try LLM first, fall back to mock parser."""
+    provider = os.getenv("AI_PROVIDER", "openai").lower()
+    
+    # Try LLM if API key is available for the selected provider
+    if (provider == "openai" and os.getenv("OPENAI_API_KEY")) or \
+       (provider == "openrouter" and os.getenv("OPENROUTER_API_KEY")):
         try:
-            logger.info("Parsing with OpenAI...")
-            result = parse_with_openai(message)
-            logger.info("OpenAI parse successful")
+            logger.info(f"Parsing with {provider}...")
+            result = parse_with_llm(message)
+            logger.info(f"{provider} parse successful")
             return result
         except Exception as e:
-            logger.warning(f"OpenAI parsing failed: {e}, falling back to mock parser")
+            logger.warning(f"{provider} parsing failed: {e}, falling back to mock parser")
 
     # Fallback: mock/regex parser
-    logger.info("Using mock parser (no API key or OpenAI failed)")
+    logger.info("Using mock parser (no API key or LLM failed)")
     return parse_with_mock(message)

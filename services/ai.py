@@ -71,7 +71,11 @@ def parse_with_llm(message: str) -> dict:
         raw = re.sub(r"^```(?:json)?\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
 
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON from LLM. Raw output was: {raw!r}")
+        raise e
 
 
 def parse_with_mock(message: str) -> dict:

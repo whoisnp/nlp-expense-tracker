@@ -61,6 +61,11 @@ async def telegram_webhook(request: Request):
 
     logger.info(f"Received message: {text!r}")
 
+    # ── Skip Telegram Commands ─────────────────────────────────────────────────
+    if text.startswith("/"):
+        logger.info(f"Skipping command: {text}")
+        return JSONResponse({"status": "ignored", "reason": "command message"})
+
     # ── 2. AI Parse ────────────────────────────────────────────────────────────
     try:
         parsed = parse_expense(text)
